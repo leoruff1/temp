@@ -1,0 +1,353 @@
+EXPERIMENT 1 — Cluster OpenMP
+Aim: To execute a C program in parallel using OpenMP threads.
+What it does: OpenMP divides work into threads that run concurrently on the CPU of one computer.
+Step 1: Install GCC
+sudo apt update
+sudo apt install build-essential -y
+
+Step 2: Create the C program
+cat > openmp_demo.c <<'EOF'
+#include <stdio.h>
+#include <omp.h>
+ 
+int main() {
+    #pragma omp parallel
+    {
+        int id = omp_get_thread_num();
+        int total = omp_get_num_threads();
+        printf("Hello from thread %d of %d\n", id, total);
+    }
+    return 0;
+}
+EOF
+
+Step 3: Compile and run
+gcc -fopenmp openmp_demo.c -o openmp_demo
+./openmp_demo
+
+Step 4: Run with four threads
+OMP_NUM_THREADS=4 ./openmp_demo
+
+Result: Each thread prints its thread ID. The order of output can change.
+EXPERIMENT 2 — Load Balancer Using HAProxy
+Aim: To distribute client requests between two web servers.
+What it does: HAProxy receives requests on port 8080 and forwards them to Server 1 or Server 2 using round-robin balancing.
+Step 1: Install packages
+sudo apt update
+sudo apt install haproxy python3 -y
+
+Step 2: Create two web pages
+mkdir -p ~/lb-lab/server1 ~/lb-lab/server2
+echo '<h1>Hello from SERVER 1</h1>' > ~/lb-lab/server1/index.html
+echo '<h1>Hello from SERVER 2</h1>' > ~/lb-lab/server2/index.html
+
+Step 3: Start the two web servers (use two terminals)
+cd ~/lb-lab/server1
+python3 -m http.server 8001 --bind 127.0.0.1
+
+In Terminal 2:
+cd ~/lb-lab/server2
+python3 -m http.server 8002 --bind 127.0.0.1
+
+Step 4: Configure HAProxy
+sudo nano /etc/haproxy/haproxy.cfg
+
+Add/replace the configuration below (back up the existing file first if it contains other settings):
+global
+    daemon
+defaults
+    mode http
+    timeout connect 5s
+    timeout client 30s
+    timeout server 30s
+frontend web_frontend
+    bind *:8080
+    default_backend web_servers
+backend web_servers
+    balance roundrobin
+    server server1 127.0.0.1:8001 check
+    server server2 127.0.0.1:8002 check
+
+Step 5: Check and start HAProxy
+sudo haproxy -c -f /etc/haproxy/haproxy.cfg
+sudo systemctl enable --now haproxy
+sudo systemctl restart haproxy
+
+Step 6: Test load balancing
+for i in {1..6}; do curl -s http://127.0.0.1:8080; done
+
+Result: Responses should alternate between the two server pages. Stop the Python servers with Ctrl+C.
+EXPERIMENT 3 — Docker-Based Application Deployment
+Aim: To package and run a simple HTML application inside a Docker container.
+What it does: Docker builds an image from the HTML file and Dockerfile, then runs it as a container.
+Step 1: Install Docker
+sudo apt update
+sudo apt install docker.io -y
+sudo systemctl enable --now docker
+
+Step 2: Create the application
+mkdir docker-lab
+cd docker-lab
+cat > index.html <<'EOF'
+<!DOCTYPE html>
+<html>
+<head><title>Docker Lab</title></head>
+<body>
+  <h1>Hello from Docker!</h1>
+  <p>My first containerized web application.</p>
+</body>
+</html>
+EOF
+
+Step 3: Create the Dockerfile
+cat > Dockerfile <<'EOF'
+FROM nginx:alpine
+COPY index.html /usr/share/nginx/html/index.html
+EXPOSE 80
+EOF
+
+Step 4: Build the image
+sudo docker build -t docker-lab:v1 .
+sudo docker images
+
+Step 5: Run the container
+sudo docker run -d --name web-container -p 8080:80 docker-lab:v1
+sudo docker ps
+
+Step 6: Test the application
+curl http://localhost:8080
+
+Step 7: Stop and remove the container
+sudo docker stop web-container
+sudo docker rm web-container
+
+Result: The HTML page is served through http://localhost:8080.
+EXPERIMENT 4 — KVM Virtual Machine Migration
+Aim: To migrate a virtual machine from one KVM host to another.
+What it does: A running VM is transferred from a source host to a destination host. This requires two compatible Linux hosts; a simple file copy is not VM migration.
+Step 1: Install KVM/libvirt on BOTH hosts
+sudo apt update
+sudo apt install qemu-kvm libvirt-daemon-system libvirt-clients virt-manager -y
+sudo systemctl enable --now libvirtd
+
+Step 2: Check KVM and libvirt on both hosts
+sudo apt install cpu-checker -y
+kvm-ok
+virsh version
+virsh list --all
+
+Step 3: Check network connectivity
+On the source host, find its IP and test the destination host:
+ip -br addr
+ping -c 4 DESTINATION_HOST_IP
+
+Step 4: Check the VM on the source host
+virsh list --all
+virsh dominfo VM_NAME
+virsh domblklist VM_NAME
+
+The VM must be running for live migration. Both hosts need compatible CPU settings, network configuration and access to the VM disk (commonly shared storage).
+Step 5: Run live migration from the source host
+sudo virsh migrate --live --persistent --undefinesource VM_NAME qemu+ssh://DESTINATION_USER@DESTINATION_HOST_IP/system
+
+Step 6: Verify on the destination host
+virsh list --all
+
+Result: The VM should be running on the destination host and no longer running on the source. The migration command will not work until SSH/libvirt access and storage are configured.
+EXPERIMENT 5 — Eavesdropping Using TCPdump
+Aim: To capture and view packets travelling through a network interface.
+What it does: tcpdump displays packet information such as source IP, destination IP and protocol.
+Step 1: Install tcpdump
+sudo apt update
+sudo apt install tcpdump -y
+
+Step 2: Find the network interface
+ip -br addr
+sudo tcpdump -D
+
+Note the active interface name, for example enp0s3 or eth0.
+Step 3: Capture packets
+sudo tcpdump -i enp0s3
+
+Stop with Ctrl+C. Replace enp0s3 with your interface.
+Step 4: Capture only 10 packets
+sudo tcpdump -i enp0s3 -c 10
+
+Step 5: Filter packets
+sudo tcpdump -i enp0s3 icmp
+sudo tcpdump -i enp0s3 port 80
+sudo tcpdump -i enp0s3 host 192.168.1.10
+
+Step 6: Save and read packets
+sudo tcpdump -i enp0s3 -w capture.pcap
+sudo tcpdump -r capture.pcap
+
+Result: Packet details are displayed or saved to capture.pcap. Capture only traffic you are authorised to inspect.
+EXPERIMENT 6 — Google Colab-Based Data API Calling
+Aim: To fetch data from a REST API using Python in Google Colab.
+What it does: Python sends an HTTP GET request to an API, receives JSON data and displays selected fields.
+Step 1: Open Google Colab
+Go to https://colab.research.google.com and create a new notebook.
+Step 2: Import requests and call the API
+import requests
+ 
+url = "https://jsonplaceholder.typicode.com/users"
+response = requests.get(url, timeout=15)
+ 
+print("Status code:", response.status_code)
+data = response.json()
+print(data[:3])
+
+Step 3: Display selected data
+for user in data:
+    print("Name:", user["name"])
+    print("Email:", user["email"])
+    print("---")
+
+Step 4: Check request errors
+response.raise_for_status()
+print("Records received:", len(data))
+
+Result: User data is received in JSON format and names/emails are printed. HTTP status 200 means the request succeeded.
+EXPERIMENT 7 — Xen-Based Virtual Machine Migration
+Aim: To migrate a Xen virtual machine from one Xen host to another.
+What it does: The Xen toolstack transfers a running VM to another Xen host. Two Xen-enabled hosts and prepared VM storage/networking are required.
+Step 1: Check Xen on both hosts
+xl info
+xl list
+
+Step 2: Check destination connectivity
+hostname
+ip -br addr
+ping -c 4 DESTINATION_HOST_IP
+
+Step 3: Identify the running VM on the source host
+sudo xl list
+
+Step 4: Migrate the VM from the source host
+sudo xl migrate VM_NAME DESTINATION_HOST
+
+Replace VM_NAME and DESTINATION_HOST with the actual VM name and destination host. SSH access and destination storage/network configuration must already be set up.
+Step 5: Verify migration
+Run the following on the destination host, then on the source host:
+sudo xl list
+
+Result: The VM should appear on the destination host and no longer appear as running on the source host.
+EXPERIMENT 8 — Hosting an Application Using KVM
+Aim: To host a web page inside a KVM virtual machine and access it from the host.
+What it does: KVM runs an Ubuntu guest VM; Nginx inside that VM serves the HTML page over HTTP.
+Step 1: Install KVM
+sudo apt update
+sudo apt install qemu-kvm libvirt-daemon-system libvirt-clients virt-manager -y
+sudo systemctl enable --now libvirtd
+
+Step 2: Create an Ubuntu virtual machine
+virt-manager
+
+In Virtual Machine Manager: create a new VM → select the Ubuntu ISO → allocate RAM, CPU and disk → install Ubuntu → start the VM.
+Step 3: Install Nginx INSIDE the VM
+sudo apt update
+sudo apt install nginx -y
+sudo systemctl enable --now nginx
+
+Step 4: Create the web page INSIDE the VM
+echo "<h1>Hello from an application hosted on KVM!</h1>" | sudo tee /var/www/html/index.html
+
+Step 5: Find the VM IP and test from the host
+hostname -I
+curl http://VM_IP_ADDRESS
+
+Result: The page is served by Nginx inside the VM. With NAT networking it is usually reachable from the host; LAN access may require bridged networking.
+ADDITIONAL EXPERIMENT — Master–Slave Cluster Configuration
+Aim: To connect one master machine to two slave machines and exchange messages over the network.
+What it does: The master connects to slave nodes using SSH and sends a message to a Python TCP server running on each slave.
+Step 1: Configure host names on ALL machines
+sudo nano /etc/hosts
+
+Add the same host mapping on each machine, changing IPs to match your lab:
+192.168.1.10 master
+192.168.1.11 slave1
+192.168.1.12 slave2
+
+Step 2: Set each machine's hostname
+Run the matching command on each PC:
+sudo hostnamectl set-hostname master
+# On slave 1: sudo hostnamectl set-hostname slave1
+# On slave 2: sudo hostnamectl set-hostname slave2
+hostname
+
+Step 3: Check IP, CPU and connectivity
+ip -br addr
+ip route
+nproc
+lscpu
+ping -c 4 192.168.1.11
+ping -c 4 192.168.1.12
+
+Step 4: Install and start SSH on BOTH slaves
+sudo apt update
+sudo apt install openssh-server python3 -y
+sudo systemctl enable --now ssh
+sudo systemctl is-active ssh
+whoami
+hostname -I
+
+Step 5: Set up SSH key on the master
+sudo apt update
+sudo apt install openssh-client python3 -y
+ssh-keygen -t ed25519
+ssh-copy-id SLAVE_USERNAME@192.168.1.11
+ssh-copy-id SLAVE_USERNAME@192.168.1.12
+
+Test passwordless login:
+ssh SLAVE_USERNAME@192.168.1.11 hostname
+
+Step 6: Create and run the TCP server on EACH slave
+cat > slave_hello.py <<'PY'
+import socket
+ 
+HOST = "0.0.0.0"
+PORT = 5000
+ 
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind((HOST, PORT))
+    server.listen()
+    print("Slave listening on port", PORT)
+ 
+    while True:
+        conn, addr = server.accept()
+        with conn:
+            message = conn.recv(1024).decode()
+            print("Received from Master:", message)
+            conn.sendall(b"Hello received successfully")
+PY
+python3 slave_hello.py
+
+Keep this program running on both slaves. Open a separate terminal on each slave if needed.
+Step 7: Create and run the client on the MASTER
+cat > master_hello.py <<'PY'
+import socket
+ 
+SLAVES = ["192.168.1.11", "192.168.1.12"]
+PORT = 5000
+ 
+for ip in SLAVES:
+    try:
+        with socket.create_connection((ip, PORT), timeout=5) as client:
+            client.sendall(b"Hello from Master")
+            print(ip, client.recv(1024).decode())
+    except OSError as error:
+        print(ip, "ERROR:", error)
+PY
+python3 master_hello.py
+
+Result: The master receives “Hello received successfully” from each slave. If the connection fails, check IP addresses, SSH/server status and firewall rules.
+
+ Quick Notes for PoE
+• KVM migration and Xen migration need two properly configured hosts; one PC alone is not enough for real host-to-host migration.
+• For HAProxy, keep both Python servers running while testing the load balancer.
+• For Docker, run the build command from the folder containing both index.html and Dockerfile.
+• For TCPdump, use the actual active interface name shown by ip -br addr.
+• For the Colab API experiment, run each code cell from top to bottom.
+• Replace all sample IPs, usernames, interface names and VM names with your lab values.
